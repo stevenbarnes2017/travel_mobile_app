@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 🥾 Trail & Adventure Trip Planner
 A full-stack AI-powered trip planning app for the Mountain West.
 Stack
@@ -35,3 +36,6 @@ Backend .env
 ANTHROPIC_API_KEY=your_key_here
 Frontend .env
 VITE_API_URL=http://localhost:8000
+=======
+# travel_mobile_app
+>>>>>>> e7882e2965a449fd44cc379d9d8274967d3361d5
