@@ -36,7 +36,7 @@ export default function PlannerPage() {
   const [error, setError] = useState('')
 
   const [form, setForm] = useState({
-    start_city: 'Denver, CO',
+    start_city: 'Colorado Springs, CO',
     trip_length: 'weekend (2 days)',
     difficulty: 'moderate',
     region: 'Colorado',

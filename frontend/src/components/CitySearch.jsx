@@ -23,7 +23,7 @@ export default function CitySearch({ value, onChange }) {
   }, [])
 
   const fetchSuggestions = async (query) => {
-    if (!query || query.length < 2) {
+    if (!query || query.length < 3) {
       setSuggestions([])
       setShowDropdown(false)
       return
@@ -68,7 +68,7 @@ export default function CitySearch({ value, onChange }) {
     setInput(val)
     onChange(val)
     clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchSuggestions(val), 350)
+    debounceRef.current = setTimeout(() => fetchSuggestions(val), 500)
   }
 
   const handleSelect = (suggestion) => {
