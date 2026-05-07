@@ -2,14 +2,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv
+from groq import Groq
 import httpx
+import os
 import traceback
+from dotenv import load_dotenv
+
 load_dotenv()
 
-app = FastAPI(title="Trail Adventure Planner API", version="1.0.0")
+app = FastAPI(title="Travel Adventure Planner API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,17 +20,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 class TripRequest(BaseModel):
     start_city: str
     trip_length: str
-    difficulty: str
+    difficulty: Optional[str] = "moderate"
     region: str
-    vibes: List[str]
     season: Optional[str] = "summer"
+    vibes: List[str]
     extra_notes: Optional[str] = ""
 
 
@@ -45,12 +45,12 @@ class TripResponse(BaseModel):
 
 
 def build_prompt(req: TripRequest) -> str:
-    vibes_str = ", ".join(req.vibes) if req.vibes else "hiking, scenic drives"
-    return f"""You are an expert outdoor adventure trip planner specializing in the Mountain West USA (Colorado, Utah, Wyoming, New Mexico).
+    vibes_str = ", ".join(req.vibes) if req.vibes else "scenic drives, great food"
+    return f"""You are an expert travel and adventure trip planner specializing in the Mountain West USA (Colorado, Utah, Wyoming, New Mexico).
 
 Plan a {req.trip_length} trip for someone based in {req.start_city} who wants to explore {req.region}.
 Season: {req.season}
-Difficulty: {req.difficulty}
+Difficulty (if hiking): {req.difficulty}
 Interests/vibes: {vibes_str}
 Additional notes: {req.extra_notes or "None"}
 
@@ -63,7 +63,7 @@ A 2-3 sentence summary with a catchy trip name, the destination, and why it's pe
 Specific destination(s), driving distance/time from their starting city, best route highlights.
 
 🗺️ DAY-BY-DAY ITINERARY
-A detailed day-by-day plan with specific trail names, landmarks, timing, and activities. Be specific with real place names.
+A detailed day-by-day plan with specific place names, landmarks, timing, and activities. Be specific with real place names.
 
 🏕️ WHERE TO STAY
 2-3 specific lodging recommendations (campgrounds, cabins, hotels) with a note on each. Include a range of options.
@@ -116,30 +116,10 @@ def parse_sections(text: str) -> dict:
 
     return sections
 
-@app.post("/api/plan", response_model=TripResponse)
-async def plan_trip(req: TripRequest):
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="API key not configured")
 
-    try:
-        response = model.generate_content(build_prompt(req))
-        print("=== GEMINI RESPONSE ===")
-        print(response)
-        print("=== RAW TEXT ===")
-        raw_text = response.text
-        print(raw_text)
-        clean_text = raw_text.replace("**", "")
-        sections = parse_sections(clean_text)
-        return TripResponse(**sections, raw=raw_text)
-
-    except Exception as e:
-        print("=== ERROR ===")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-    
 @app.get("/")
 def root():
-    return {"status": "Trail Planner API is running"}
+    return {"status": "Travel Adventure Planner API is running"}
 
 
 @app.get("/health")
@@ -147,31 +127,17 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/api/plan", response_model=TripResponse)
-async def plan_trip(req: TripRequest):
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=500, detail="API key not configured")
-
-    try:
-        response = model.generate_content(build_prompt(req))
-        raw_text = response.text
-        sections = parse_sections(raw_text)
-        return TripResponse(**sections, raw=raw_text)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
 @app.get("/api/places")
 async def places_autocomplete(input: str):
     if not input or len(input) < 2:
         return {"predictions": []}
-    
-    key = os.getenv("VITE_GOOGLE_PLACES_KEY")
+
+    key = os.getenv("GOOGLE_PLACES_KEY")
     if not key:
         raise HTTPException(status_code=500, detail="Google Places key not configured")
-    
-    async with httpx.AsyncClient() as client:
-        res = await client.get(
+
+    async with httpx.AsyncClient() as http_client:
+        res = await http_client.get(
             "https://maps.googleapis.com/maps/api/place/autocomplete/json",
             params={
                 "input": input,
@@ -181,3 +147,39 @@ async def places_autocomplete(input: str):
             }
         )
     return res.json()
+
+
+@app.post("/api/plan", response_model=TripResponse)
+async def plan_trip(req: TripRequest):
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="Groq API key not configured")
+
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert travel and adventure planner for the Mountain West USA. You give specific, detailed, enthusiastic trip recommendations with real place names."
+                },
+                {
+                    "role": "user",
+                    "content": build_prompt(req)
+                }
+            ],
+            temperature=0.7,
+            max_tokens=2000,
+        )
+
+        raw_text = completion.choices[0].message.content
+        print("=== GROQ RESPONSE ===")
+        print(raw_text)
+
+        clean_text = raw_text.replace("**", "")
+        sections = parse_sections(clean_text)
+        return TripResponse(**sections, raw=raw_text)
+
+    except Exception as e:
+        print("=== ERROR ===")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
