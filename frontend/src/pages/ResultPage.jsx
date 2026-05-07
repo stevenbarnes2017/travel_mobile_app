@@ -40,8 +40,7 @@ export default function ResultPage() {
       </div>
 
       <div className={styles.sections}>
-        {/* Map at the top */}
-        <TripMap result={result} region={form.region} />
+        <TripMap locations={result.locations || []} region={form.region} />
 
         {SECTIONS.map(({ key, icon, label }) =>
           result[key] ? (

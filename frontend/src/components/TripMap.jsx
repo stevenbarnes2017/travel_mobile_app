@@ -19,30 +19,12 @@ const REGION_CENTERS = {
   'anywhere in the Mountain West': [-108.0, 39.5],
 }
 
-export default function TripMap({ result, region }) {
+export default function TripMap({ locations = [], region }) {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const initialized = useRef(false)
   const [loading, setLoading] = useState(true)
   const [pinCount, setPinCount] = useState(0)
-
-  const extractPlaces = () => {
-    const places = []
-    const addPlaces = (text, type, limit) => {
-      if (!text) return
-      const matches = text.match(/\*\*([^*]+)\*\*/g) || []
-      matches.slice(0, limit).forEach(m => {
-        const name = m.replace(/\*\*/g, '').replace(/\([^)]*\)/g, '').trim()
-        if (name.length > 3 && !name.includes(':') && !name.match(/^Day \d/i)) {
-          places.push({ name, type })
-        }
-      })
-    }
-    addPlaces(result.destination, 'destination', 2)
-    addPlaces(result.food, 'food', 4)
-    addPlaces(result.lodging, 'lodging', 2)
-    return places
-  }
 
   useEffect(() => {
     if (initialized.current) return
@@ -60,20 +42,30 @@ export default function TripMap({ result, region }) {
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
 
     const geocodeAndPin = async () => {
-      const places = extractPlaces()
+      console.log('Locations to pin:', locations)
       let count = 0
 
-      for (const place of places.slice(0, 8)) {
+      // Get destination for context
+      const destLocation = locations.find(l => l.type === 'destination')
+      const context = destLocation ? destLocation.name : region
+
+      for (const loc of locations.slice(0, 8)) {
         try {
-          const query = encodeURIComponent(`${place.name}, ${region}, USA`)
+          // For non-destination pins, add destination city as context
+          const searchQuery = loc.type === 'destination'
+            ? `${loc.name}, USA`
+            : `${loc.name}, ${context}`
+          
+          const query = encodeURIComponent(searchQuery)
           const res = await fetch(
             `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxgl.accessToken}&limit=1&types=poi,place`
           )
           const data = await res.json()
+          console.log(`Geocoding "${loc.name}":`, data.features?.[0]?.place_name || 'NOT FOUND')
 
           if (data.features && data.features.length > 0) {
             const [lng, lat] = data.features[0].center
-            const pinType = PIN_TYPES[place.type]
+            const pinType = PIN_TYPES[loc.type] || PIN_TYPES.destination
 
             const el = document.createElement('div')
             el.className = styles.pin
@@ -85,8 +77,8 @@ export default function TripMap({ result, region }) {
                 <div style="padding:4px 2px;display:flex;align-items:center;gap:8px;">
                   <span style="font-size:1.2rem">${pinType.emoji}</span>
                   <div>
-                    <div style="font-weight:500;font-size:0.88rem">${place.name}</div>
-                    <div style="font-size:0.75rem;opacity:0.6;text-transform:capitalize">${place.type}</div>
+                    <div style="font-weight:500;font-size:0.88rem">${loc.name}</div>
+                    <div style="font-size:0.75rem;opacity:0.6;text-transform:capitalize">${loc.type}</div>
                   </div>
                 </div>
               `)
@@ -97,7 +89,6 @@ export default function TripMap({ result, region }) {
               .addTo(map.current)
 
             count++
-
             if (count === 1) {
               map.current.flyTo({ center: [lng, lat], zoom: 9, duration: 1500 })
             }

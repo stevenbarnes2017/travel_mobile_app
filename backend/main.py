@@ -33,6 +33,11 @@ class TripRequest(BaseModel):
     extra_notes: Optional[str] = ""
 
 
+class Location(BaseModel):
+    name: str
+    type: str  # destination, food, lodging
+
+
 class TripResponse(BaseModel):
     overview: str
     destination: str
@@ -41,6 +46,7 @@ class TripResponse(BaseModel):
     food: str
     gear: str
     pro_tips: str
+    locations: List[Location]
     raw: str
 
 
@@ -54,7 +60,7 @@ Difficulty (if hiking): {req.difficulty}
 Interests/vibes: {vibes_str}
 Additional notes: {req.extra_notes or "None"}
 
-Return a detailed, enthusiastic, and practical trip plan in exactly this format with these section headers:
+Return a detailed, enthusiastic, and practical trip plan in exactly this format:
 
 🏔️ TRIP OVERVIEW
 A 2-3 sentence summary with a catchy trip name, the destination, and why it's perfect for them.
@@ -63,21 +69,29 @@ A 2-3 sentence summary with a catchy trip name, the destination, and why it's pe
 Specific destination(s), driving distance/time from their starting city, best route highlights.
 
 🗺️ DAY-BY-DAY ITINERARY
-A detailed day-by-day plan with specific place names, landmarks, timing, and activities. Be specific with real place names.
+A detailed day-by-day plan with specific place names, landmarks, timing, and activities.
 
 🏕️ WHERE TO STAY
-2-3 specific lodging recommendations (campgrounds, cabins, hotels) with a note on each. Include a range of options.
+2-3 specific lodging recommendations with a note on each.
 
 🍺 FOOD & DRINK STOPS
-3-4 specific restaurant or brewery recommendations near the destination. Real place names only.
+3-4 specific restaurant or brewery recommendations. Real place names only.
 
 🎒 GEAR CHECKLIST
-10-12 essential items for this specific trip. Be specific to the terrain and season.
+10-12 essential items for this specific trip.
 
 💡 PRO TIPS
-3-4 insider tips specific to this destination — permits, best times of day, hidden spots, what to avoid.
+3-4 insider tips specific to this destination.
 
-Keep each section concise but rich with specific, actionable details. Use real place names throughout."""
+📌 KEY LOCATIONS
+DESTINATION: [main destination town only, e.g. Salida, CO]
+FOOD: [exact restaurant name only, e.g. The Fritz]
+FOOD: [exact restaurant name only]
+FOOD: [exact restaurant name only]
+LODGING: [exact lodging name only, e.g. Mount Princeton Hot Springs Resort]
+LODGING: [exact lodging name only]
+
+Important: The KEY LOCATIONS section must use exactly those labels. One name per line. No descriptions."""
 
 
 def parse_sections(text: str) -> dict:
@@ -115,6 +129,26 @@ def parse_sections(text: str) -> dict:
         sections[key] = text[start:end].strip()
 
     return sections
+
+
+def parse_locations(text: str) -> List[Location]:
+    locations = []
+    marker = "📌 KEY LOCATIONS"
+    start = text.find(marker)
+    if start == -1:
+        return locations
+
+    location_text = text[start + len(marker):]
+    for line in location_text.strip().split('\n'):
+        line = line.strip()
+        for loc_type in ['DESTINATION', 'FOOD', 'LODGING']:
+            if line.startswith(f"{loc_type}:"):
+                name = line[len(loc_type)+1:].strip()
+                # Clean brackets if AI included them
+                name = name.replace('[', '').replace(']', '').strip()
+                if name and len(name) > 2:
+                    locations.append(Location(name=name, type=loc_type.lower()))
+    return locations
 
 
 @app.get("/")
@@ -160,7 +194,7 @@ async def plan_trip(req: TripRequest):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert travel and adventure planner for the Mountain West USA. You give specific, detailed, enthusiastic trip recommendations with real place names."
+                    "content": "You are an expert travel and adventure planner for the Mountain West USA. You give specific, detailed, enthusiastic trip recommendations with real place names. Always follow the exact format requested."
                 },
                 {
                     "role": "user",
@@ -177,7 +211,10 @@ async def plan_trip(req: TripRequest):
 
         clean_text = raw_text.replace("**", "")
         sections = parse_sections(clean_text)
-        return TripResponse(**sections, raw=raw_text)
+        locations = parse_locations(raw_text)
+        print("=== LOCATIONS ===", locations)
+
+        return TripResponse(**sections, locations=locations, raw=raw_text)
 
     except Exception as e:
         print("=== ERROR ===")
