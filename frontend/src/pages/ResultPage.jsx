@@ -1,6 +1,7 @@
 import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
+import TripMap from '../components/TripMap'
 import styles from './ResultPage.module.css'
 
 const SECTIONS = [
@@ -39,6 +40,9 @@ export default function ResultPage() {
       </div>
 
       <div className={styles.sections}>
+        {/* Map at the top */}
+        <TripMap result={result} region={form.region} />
+
         {SECTIONS.map(({ key, icon, label }) =>
           result[key] ? (
             <div key={key} className={styles.section}>
