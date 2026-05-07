@@ -38,10 +38,10 @@ export default function CitySearch({ value, onChange }) {
         types: '(cities)',
         components: 'country:us',
       })
-
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       const res = await fetch(
-        `http://10.0.0.41:8000/api/places?input=${encodeURIComponent(query)}`
-      )
+        `${API_URL}/api/places?input=${encodeURIComponent(query)}`
+        )
       const data = await res.json()
 
       if (data.status === 'OK') {
