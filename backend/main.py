@@ -6,7 +6,7 @@ import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import httpx
-
+import traceback
 load_dotenv()
 
 app = FastAPI(title="Trail Adventure Planner API", version="1.0.0")
@@ -116,7 +116,27 @@ def parse_sections(text: str) -> dict:
 
     return sections
 
+@app.post("/api/plan", response_model=TripResponse)
+async def plan_trip(req: TripRequest):
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=500, detail="API key not configured")
 
+    try:
+        response = model.generate_content(build_prompt(req))
+        print("=== GEMINI RESPONSE ===")
+        print(response)
+        print("=== RAW TEXT ===")
+        raw_text = response.text
+        print(raw_text)
+        clean_text = raw_text.replace("**", "")
+        sections = parse_sections(clean_text)
+        return TripResponse(**sections, raw=raw_text)
+
+    except Exception as e:
+        print("=== ERROR ===")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @app.get("/")
 def root():
     return {"status": "Trail Planner API is running"}
