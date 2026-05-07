@@ -1,3 +1,9 @@
+import React, { useEffect } from 'react'
+import { Routes, Route } from 'react-router-dom'
+import HomePage from './pages/HomePage'
+import PlannerPage from './pages/PlannerPage'
+import ResultPage from './pages/ResultPage'
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 async function fetchWithRetry(url, options = {}, timeoutMs = 60000) {
