@@ -12,16 +12,17 @@ const PIN_TYPES = {
 }
 
 const REGION_CENTERS = {
-  'Colorado':                     [-105.5, 39.0],
-  'Utah':                         [-111.5, 39.5],
-  'Wyoming':                      [-107.5, 43.0],
-  'New Mexico':                   [-106.0, 34.5],
-  'anywhere in the Mountain West':[-108.0, 39.5],
+  'Colorado':                      [-105.5, 39.0],
+  'Utah':                          [-111.5, 39.5],
+  'Wyoming':                       [-107.5, 43.0],
+  'New Mexico':                    [-106.0, 34.5],
+  'anywhere in the Mountain West': [-108.0, 39.5],
 }
 
 export default function TripMap({ result, region }) {
   const mapContainer = useRef(null)
   const map = useRef(null)
+  const initialized = useRef(false)
   const [loading, setLoading] = useState(true)
   const [pinCount, setPinCount] = useState(0)
 
@@ -44,6 +45,9 @@ export default function TripMap({ result, region }) {
   }
 
   useEffect(() => {
+    if (initialized.current) return
+    initialized.current = true
+
     const center = REGION_CENTERS[region] || REGION_CENTERS['anywhere in the Mountain West']
 
     map.current = new mapboxgl.Map({
@@ -109,7 +113,13 @@ export default function TripMap({ result, region }) {
 
     map.current.on('load', geocodeAndPin)
 
-    return () => map.current?.remove()
+    return () => {
+      if (map.current) {
+        map.current.remove()
+        map.current = null
+        initialized.current = false
+      }
+    }
   }, [])
 
   return (
