@@ -44,6 +44,8 @@ export default function TripMap({ locations = [], region }) {
     const geocodeAndPin = async () => {
       console.log('Locations to pin:', locations)
       let count = 0
+      const coordinates = []
+      const seenCoordinates = new Map() // Track duplicate coords
 
       // Get destination for context
       const destLocation = locations.find(l => l.type === 'destination')
@@ -51,7 +53,7 @@ export default function TripMap({ locations = [], region }) {
 
       for (const loc of locations.slice(0, 8)) {
         try {
-          // For non-destination pins, add destination city as context
+          // KEEP ORIGINAL GEOCODING - it works!
           const searchQuery = loc.type === 'destination'
             ? `${loc.name}, USA`
             : `${loc.name}, ${context}`
@@ -64,7 +66,19 @@ export default function TripMap({ locations = [], region }) {
           console.log(`Geocoding "${loc.name}":`, data.features?.[0]?.place_name || 'NOT FOUND')
 
           if (data.features && data.features.length > 0) {
-            const [lng, lat] = data.features[0].center
+            let [lng, lat] = data.features[0].center
+            
+            // NEW: Offset duplicate coordinates
+            const coordKey = `${lng.toFixed(4)},${lat.toFixed(4)}`
+            if (seenCoordinates.has(coordKey)) {
+              const offset = seenCoordinates.get(coordKey)
+              lng += 0.001 * Math.cos(offset * Math.PI / 3)
+              lat += 0.001 * Math.sin(offset * Math.PI / 3)
+              seenCoordinates.set(coordKey, offset + 1)
+            } else {
+              seenCoordinates.set(coordKey, 1)
+            }
+
             const pinType = PIN_TYPES[loc.type] || PIN_TYPES.destination
 
             const el = document.createElement('div')
@@ -72,13 +86,17 @@ export default function TripMap({ locations = [], region }) {
             el.style.borderColor = pinType.color
             el.innerHTML = pinType.emoji
 
+            // NEW: Enhanced popup with day number
             const popup = new mapboxgl.Popup({ offset: 25, closeButton: true })
               .setHTML(`
                 <div style="padding:4px 2px;display:flex;align-items:center;gap:8px;">
                   <span style="font-size:1.2rem">${pinType.emoji}</span>
                   <div>
                     <div style="font-weight:500;font-size:0.88rem">${loc.name}</div>
-                    <div style="font-size:0.75rem;opacity:0.6;text-transform:capitalize">${loc.type}</div>
+                    <div style="font-size:0.75rem;opacity:0.6;text-transform:capitalize">
+                      ${loc.day ? `Day ${loc.day} • ` : ''}${loc.type}
+                    </div>
+                    ${loc.description ? `<div style="font-size:0.72rem;margin-top:4px;opacity:0.7">${loc.description}</div>` : ''}
                   </div>
                 </div>
               `)
@@ -88,7 +106,9 @@ export default function TripMap({ locations = [], region }) {
               .setPopup(popup)
               .addTo(map.current)
 
+            coordinates.push([lng, lat])
             count++
+            
             if (count === 1) {
               map.current.flyTo({ center: [lng, lat], zoom: 9, duration: 1500 })
             }
@@ -96,6 +116,37 @@ export default function TripMap({ locations = [], region }) {
         } catch (err) {
           console.error('Geocoding error:', err)
         }
+      }
+
+      // NEW: Draw route line
+      if (coordinates.length > 1) {
+        map.current.addSource('route', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: coordinates
+            }
+          }
+        })
+
+        map.current.addLayer({
+          id: 'route',
+          type: 'line',
+          source: 'route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          paint: {
+            'line-color': '#c48e38',
+            'line-width': 3,
+            'line-opacity': 0.6,
+            'line-dasharray': [2, 2]
+          }
+        })
       }
 
       setPinCount(count)
@@ -112,6 +163,30 @@ export default function TripMap({ locations = [], region }) {
       }
     }
   }, [])
+
+  const openInGoogleMaps = () => {
+    // Build Google Maps URL with all locations as waypoints
+    const destLocation = locations.find(l => l.type === 'destination')
+    if (!destLocation) return
+
+    // Origin: first destination
+    const origin = encodeURIComponent(destLocation.name)
+    
+    // Waypoints: food and lodging locations
+    const waypoints = locations
+      .filter(l => l.type === 'food' || l.type === 'lodging')
+      .map(l => encodeURIComponent(l.name))
+      .join('|')
+    
+    // Destination: last location or same as origin for round trip
+    const destination = waypoints ? encodeURIComponent(locations[locations.length - 1].name) : origin
+    
+    const url = waypoints
+      ? `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&destination=${origin}&travelmode=driving`
+    
+    window.open(url, '_blank')
+  }
 
   return (
     <div className={styles.wrap}>
@@ -130,6 +205,11 @@ export default function TripMap({ locations = [], region }) {
             <span style={{ color }} className={styles.legendLabel}>{type}</span>
           </span>
         ))}
+        {!loading && pinCount > 0 && (
+          <button onClick={openInGoogleMaps} className={styles.directionsBtn}>
+            🗺️ Get Directions
+          </button>
+        )}
       </div>
     </div>
   )

@@ -5,6 +5,7 @@ from typing import List, Optional
 from groq import Groq
 import httpx
 import os
+import re
 import traceback
 from dotenv import load_dotenv
 
@@ -36,6 +37,8 @@ class TripRequest(BaseModel):
 class Location(BaseModel):
     name: str
     type: str  # destination, food, lodging
+    day: Optional[int] = None
+    description: Optional[str] = None
 
 
 class TripResponse(BaseModel):
@@ -69,7 +72,7 @@ A 2-3 sentence summary with a catchy trip name, the destination, and why it's pe
 Specific destination(s), driving distance/time from their starting city, best route highlights.
 
 🗺️ DAY-BY-DAY ITINERARY
-A detailed day-by-day plan with specific place names, landmarks, timing, and activities.
+A detailed day-by-day plan with specific place names, landmarks, timing, and activities. Start each day with "Day 1:", "Day 2:", etc.
 
 🏕️ WHERE TO STAY
 2-3 specific lodging recommendations with a note on each.
@@ -131,7 +134,55 @@ def parse_sections(text: str) -> dict:
     return sections
 
 
-def parse_locations(text: str) -> List[Location]:
+def extract_day_from_itinerary(location_name: str, itinerary_text: str) -> Optional[int]:
+    """Extract which day a location appears in based on itinerary text"""
+    # Look for "Day 1:", "Day 2:", etc.
+    day_pattern = r'Day (\d+):'
+    current_day = None
+    
+    # Extract core name (remove state, commas)
+    core_name = location_name.split(',')[0].strip()
+    
+    for line in itinerary_text.split('\n'):
+        # Check if this line starts a new day
+        day_match = re.search(day_pattern, line, re.IGNORECASE)
+        if day_match:
+            current_day = int(day_match.group(1))
+        
+        # Check if location is mentioned in this line
+        if current_day and (core_name.lower() in line.lower() or location_name.lower() in line.lower()):
+            return current_day
+    
+    # Default to day 1 if not found
+    return 1
+
+
+def extract_description_from_sections(location_name: str, lodging_text: str, food_text: str, loc_type: str) -> Optional[str]:
+    """Extract description from the lodging or food sections"""
+    # Search in the relevant section
+    search_text = lodging_text if loc_type == 'lodging' else food_text if loc_type == 'food' else ""
+    
+    if not search_text:
+        return None
+    
+    core_name = location_name.split(',')[0].strip()
+    
+    # Look for the location name in the section
+    for line in search_text.split('.'):
+        if core_name.lower() in line.lower():
+            # Extract a short description (first 50 chars after the name)
+            parts = line.split(core_name, 1)
+            if len(parts) > 1:
+                desc = parts[1].strip()
+                # Clean it up - take first phrase
+                desc = desc.split('.')[0].split(',')[0]
+                if len(desc) > 5 and len(desc) < 60:
+                    return desc
+    
+    return None
+
+
+def parse_locations(text: str, itinerary_text: str = "", lodging_text: str = "", food_text: str = "") -> List[Location]:
     locations = []
     marker = "📌 KEY LOCATIONS"
     start = text.find(marker)
@@ -144,10 +195,21 @@ def parse_locations(text: str) -> List[Location]:
         for loc_type in ['DESTINATION', 'FOOD', 'LODGING']:
             if line.startswith(f"{loc_type}:"):
                 name = line[len(loc_type)+1:].strip()
-                # Clean brackets if AI included them
                 name = name.replace('[', '').replace(']', '').strip()
+                
                 if name and len(name) > 2:
-                    locations.append(Location(name=name, type=loc_type.lower()))
+                    # Extract day from itinerary
+                    day = extract_day_from_itinerary(name, itinerary_text) if itinerary_text else 1
+                    
+                    # Extract description from lodging/food sections
+                    description = extract_description_from_sections(name, lodging_text, food_text, loc_type.lower())
+                    
+                    locations.append(Location(
+                        name=name,
+                        type=loc_type.lower(),
+                        day=day,
+                        description=description
+                    ))
     return locations
 
 
@@ -211,8 +273,18 @@ async def plan_trip(req: TripRequest):
 
         clean_text = raw_text.replace("**", "")
         sections = parse_sections(clean_text)
-        locations = parse_locations(raw_text)
-        print("=== LOCATIONS ===", locations)
+        
+        # Pass all sections to parser for better extraction
+        locations = parse_locations(
+            raw_text,
+            sections.get("itinerary", ""),
+            sections.get("lodging", ""),
+            sections.get("food", "")
+        )
+        
+        print("=== LOCATIONS ===")
+        for loc in locations:
+            print(f"  {loc.name} | {loc.type} | Day {loc.day} | {loc.description}")
 
         return TripResponse(**sections, locations=locations, raw=raw_text)
 
