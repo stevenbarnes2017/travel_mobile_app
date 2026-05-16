@@ -53,6 +53,18 @@ class TripResponse(BaseModel):
     raw: str
 
 
+class ChatRequest(BaseModel):
+    message: str
+    current_trip: TripResponse
+    start_city: str
+    region: str
+
+
+class ChatResponse(BaseModel):
+    modified_trip: TripResponse
+    chat_response: str
+
+
 def build_prompt(req: TripRequest) -> str:
     vibes_str = ", ".join(req.vibes) if req.vibes else "scenic drives, great food"
     return f"""You are an expert travel and adventure trip planner specializing in the Mountain West USA (Colorado, Utah, Wyoming, New Mexico).
@@ -97,6 +109,63 @@ LODGING: [exact lodging name only]
 Important: The KEY LOCATIONS section must use exactly those labels. One name per line. No descriptions."""
 
 
+def build_chat_prompt(req: ChatRequest) -> str:
+    current_trip = req.current_trip
+    
+    return f"""You are an expert travel and adventure trip planner. A user has generated a trip and now wants to modify it.
+
+CURRENT TRIP:
+Start City: {req.start_city}
+Region: {req.region}
+
+Overview: {current_trip.overview}
+
+Itinerary: {current_trip.itinerary}
+
+Lodging: {current_trip.lodging}
+
+Food & Drink: {current_trip.food}
+
+Current Locations:
+{chr(10).join([f"{loc.type.upper()}: {loc.name}" + (f" (Day {loc.day})" if loc.day else "") for loc in current_trip.locations])}
+
+USER REQUEST: {req.message}
+
+Based on the user's request, modify the trip accordingly. If they want to change a specific day, modify that day's itinerary and update relevant locations. If they want to add something, incorporate it naturally.
+
+Return the COMPLETE modified trip in the same format as the original:
+
+🏔️ TRIP OVERVIEW
+[Modified or original overview]
+
+📍 DESTINATION & GETTING THERE
+[Modified or original]
+
+🗺️ DAY-BY-DAY ITINERARY
+[Modified itinerary with changes incorporated. Keep "Day 1:", "Day 2:" format]
+
+🏕️ WHERE TO STAY
+[Modified or original lodging recommendations]
+
+🍺 FOOD & DRINK STOPS
+[Modified or original food recommendations, or add new ones if requested]
+
+🎒 GEAR CHECKLIST
+[Modified or original]
+
+💡 PRO TIPS
+[Modified or original, or add new tips based on changes]
+
+📌 KEY LOCATIONS
+DESTINATION: [destination]
+FOOD: [food place]
+FOOD: [food place]
+LODGING: [lodging]
+LODGING: [lodging]
+
+Also provide a brief 1-2 sentence response to the user explaining what you changed."""
+
+
 def parse_sections(text: str) -> dict:
     sections = {
         "overview": "",
@@ -136,30 +205,24 @@ def parse_sections(text: str) -> dict:
 
 def extract_day_from_itinerary(location_name: str, itinerary_text: str) -> Optional[int]:
     """Extract which day a location appears in based on itinerary text"""
-    # Look for "Day 1:", "Day 2:", etc.
     day_pattern = r'Day (\d+):'
     current_day = None
     
-    # Extract core name (remove state, commas)
     core_name = location_name.split(',')[0].strip()
     
     for line in itinerary_text.split('\n'):
-        # Check if this line starts a new day
         day_match = re.search(day_pattern, line, re.IGNORECASE)
         if day_match:
             current_day = int(day_match.group(1))
         
-        # Check if location is mentioned in this line
         if current_day and (core_name.lower() in line.lower() or location_name.lower() in line.lower()):
             return current_day
     
-    # Default to day 1 if not found
     return 1
 
 
 def extract_description_from_sections(location_name: str, lodging_text: str, food_text: str, loc_type: str) -> Optional[str]:
     """Extract description from the lodging or food sections"""
-    # Search in the relevant section
     search_text = lodging_text if loc_type == 'lodging' else food_text if loc_type == 'food' else ""
     
     if not search_text:
@@ -167,14 +230,11 @@ def extract_description_from_sections(location_name: str, lodging_text: str, foo
     
     core_name = location_name.split(',')[0].strip()
     
-    # Look for the location name in the section
     for line in search_text.split('.'):
         if core_name.lower() in line.lower():
-            # Extract a short description (first 50 chars after the name)
             parts = line.split(core_name, 1)
             if len(parts) > 1:
                 desc = parts[1].strip()
-                # Clean it up - take first phrase
                 desc = desc.split('.')[0].split(',')[0]
                 if len(desc) > 5 and len(desc) < 60:
                     return desc
@@ -198,10 +258,7 @@ def parse_locations(text: str, itinerary_text: str = "", lodging_text: str = "",
                 name = name.replace('[', '').replace(']', '').strip()
                 
                 if name and len(name) > 2:
-                    # Extract day from itinerary
                     day = extract_day_from_itinerary(name, itinerary_text) if itinerary_text else 1
-                    
-                    # Extract description from lodging/food sections
                     description = extract_description_from_sections(name, lodging_text, food_text, loc_type.lower())
                     
                     locations.append(Location(
@@ -274,7 +331,6 @@ async def plan_trip(req: TripRequest):
         clean_text = raw_text.replace("**", "")
         sections = parse_sections(clean_text)
         
-        # Pass all sections to parser for better extraction
         locations = parse_locations(
             raw_text,
             sections.get("itinerary", ""),
@@ -290,5 +346,65 @@ async def plan_trip(req: TripRequest):
 
     except Exception as e:
         print("=== ERROR ===")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_refine(req: ChatRequest):
+    """Refine an existing trip based on user chat message"""
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=500, detail="Groq API key not configured")
+
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert travel planner helping users refine their trips. Make thoughtful modifications based on their requests while keeping the overall trip coherent."
+                },
+                {
+                    "role": "user",
+                    "content": build_chat_prompt(req)
+                }
+            ],
+            temperature=0.7,
+            max_tokens=2000,
+        )
+
+        raw_text = completion.choices[0].message.content
+        print("=== CHAT REFINEMENT ===")
+        print(f"User: {req.message}")
+        print(f"AI Response:\n{raw_text[:500]}")
+
+        # Extract chat response (first paragraph before the formatted trip)
+        chat_response = ""
+        lines = raw_text.split('\n')
+        for line in lines:
+            if line.strip() and not line.startswith('🏔️'):
+                chat_response = line.strip()
+                break
+        
+        # Parse the modified trip
+        clean_text = raw_text.replace("**", "")
+        sections = parse_sections(clean_text)
+        
+        locations = parse_locations(
+            raw_text,
+            sections.get("itinerary", ""),
+            sections.get("lodging", ""),
+            sections.get("food", "")
+        )
+
+        modified_trip = TripResponse(**sections, locations=locations, raw=raw_text)
+
+        return ChatResponse(
+            modified_trip=modified_trip,
+            chat_response=chat_response or "I've updated your trip based on your request!"
+        )
+
+    except Exception as e:
+        print("=== CHAT ERROR ===")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
