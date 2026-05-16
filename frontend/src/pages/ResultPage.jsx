@@ -12,7 +12,9 @@ const SECTIONS = [
   { key: 'lodging',      icon: '🏕️', label: 'Where to Stay' },
   { key: 'food',         icon: '🍺', label: 'Food & Drink Stops' },
   { key: 'gear',         icon: '🎒', label: 'Gear Checklist' },
+  { key: 'why_vibes',    icon: '✨', label: 'Why This Trip Vibes' },
   { key: 'pro_tips',     icon: '💡', label: 'Pro Tips' },
+  
 ]
 
 export default function ResultPage() {
@@ -43,30 +45,44 @@ export default function ResultPage() {
       </div>
 
       <div className={styles.sections}>
-        {/* Trip Info Section */}
+        {/* Trip Info Section - Compact */}
         <div className={styles.tripInfo}>
-          <div className={styles.infoRow}>
-            <span className={styles.infoLabel}>📍 From:</span>
-            <span className={styles.infoValue}>{form.start_city}</span>
-          </div>
-          <div className={styles.infoRow}>
-            <span className={styles.infoLabel}>🎯 Interests:</span>
-            <div className={styles.vibesList}>
-              {form.vibes && form.vibes.map((vibe, idx) => (
-                <span key={idx} className={styles.vibeTag}>{vibe}</span>
-              ))}
+          <div className={styles.infoGrid}>
+            <div className={styles.infoItem}>
+              <span className={styles.infoIcon}>📍</span>
+              <div>
+                <span className={styles.infoLabel}>From</span>
+                <span className={styles.infoValue}>{form.start_city}</span>
+              </div>
+            </div>
+            
+            {form.difficulty && (
+              <div className={styles.infoItem}>
+                <span className={styles.infoIcon}>⛰️</span>
+                <div>
+                  <span className={styles.infoLabel}>Difficulty</span>
+                  <span className={styles.infoValue}>{form.difficulty}</span>
+                </div>
+              </div>
+            )}
+            
+            <div className={styles.infoItem}>
+              <span className={styles.infoIcon}>🎯</span>
+              <div>
+                <span className={styles.infoLabel}>Interests</span>
+                <div className={styles.vibesList}>
+                  {form.vibes && form.vibes.map((vibe, idx) => (
+                    <span key={idx} className={styles.vibeTag}>{vibe}</span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-          {form.difficulty && (
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>⛰️ Difficulty:</span>
-              <span className={styles.infoValue}>{form.difficulty}</span>
-            </div>
-          )}
+          
           {form.extra_notes && (
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>📝 Notes:</span>
-              <span className={styles.infoValue}>{form.extra_notes}</span>
+            <div className={styles.notesRow}>
+              <span className={styles.infoIcon}>📝</span>
+              <span className={styles.notesText}>{form.extra_notes}</span>
             </div>
           )}
         </div>
