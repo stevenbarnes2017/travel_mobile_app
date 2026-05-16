@@ -48,6 +48,7 @@ class TripResponse(BaseModel):
     lodging: str
     food: str
     gear: str
+    why_vibes: str
     pro_tips: str
     locations: List[Location]
     raw: str
@@ -72,34 +73,43 @@ def build_prompt(req: TripRequest) -> str:
 Plan a {req.trip_length} trip for someone based in {req.start_city} who wants to explore {req.region}.
 Season: {req.season}
 Difficulty (if hiking): {req.difficulty}
-Interests/vibes: {vibes_str}
+IMPORTANT - Design this trip specifically around these interests/vibes: {vibes_str}
 Additional notes: {req.extra_notes or "None"}
+
+The trip MUST include activities, locations, and experiences that align with these vibes: {vibes_str}. For example:
+- If "breweries" is selected, include craft brewery stops in the itinerary
+- If "hiking" is selected, include specific trails with difficulty ratings
+- If "photography" is selected, mention best photo spots and golden hour times
+- If "scenic drives" is selected, highlight specific scenic routes and overlooks
 
 Return a detailed, enthusiastic, and practical trip plan in exactly this format:
 
 🏔️ TRIP OVERVIEW
-A 2-3 sentence summary with a catchy trip name, the destination, and why it's perfect for them.
+A 2-3 sentence summary with a catchy trip name, the destination, and why it's perfect for their specific interests ({vibes_str}).
 
 📍 DESTINATION & GETTING THERE
-Specific destination(s), driving distance/time from their starting city, best route highlights.
+Specific destination(s), driving distance/time from {req.start_city}, best route highlights.
 
 🗺️ DAY-BY-DAY ITINERARY
-A detailed day-by-day plan with specific place names, landmarks, timing, and activities. Start each day with "Day 1:", "Day 2:", etc.
+A detailed day-by-day plan with specific place names, landmarks, timing, and activities that match their vibes ({vibes_str}). Start each day with "Day 1:", "Day 2:", etc. Start a new line after each day for easy reading. Make sure activities align with: {vibes_str}.
 
 🏕️ WHERE TO STAY
-2-3 specific lodging recommendations with a note on each.
+2-3 specific lodging recommendations that fit the vibe (e.g., if "luxury" is selected, recommend upscale lodges; if "budget-friendly", recommend affordable options).
 
 🍺 FOOD & DRINK STOPS
-3-4 specific restaurant or brewery recommendations. Real place names only.
+3-4 specific restaurant or brewery recommendations. Real place names only. If "breweries", "food scene", or "local cuisine" are in the vibes, prioritize those types of establishments.
 
 🎒 GEAR CHECKLIST
-10-12 essential items for this specific trip.
+10-12 essential items for this specific trip, tailored to the activities suggested.
+
+✨ WHY THIS TRIP VIBES
+A paragraph (3-5 sentences) explaining exactly how this trip delivers on the user's interests ({vibes_str}). Be specific about which activities, locations, and experiences match which vibes. Make it personal and enthusiastic.
 
 💡 PRO TIPS
-3-4 insider tips specific to this destination.
+3-4 insider tips specific to this destination and the user's interests ({vibes_str}).
 
 📌 KEY LOCATIONS
-DESTINATION: [main destination town only, e.g. Salida, CO]
+DESTINATION: [main destination town and state e.g. Estes Park, CO]
 FOOD: [exact restaurant name only, e.g. The Fritz]
 FOOD: [exact restaurant name only]
 FOOD: [exact restaurant name only]
@@ -156,6 +166,9 @@ Return the COMPLETE modified trip in the same format as the original:
 💡 PRO TIPS
 [Modified or original, or add new tips based on changes]
 
+✨ WHY THIS TRIP VIBES
+[Modified or original, or add new vibes based on changes]
+
 📌 KEY LOCATIONS
 DESTINATION: [destination]
 FOOD: [food place]
@@ -174,6 +187,7 @@ def parse_sections(text: str) -> dict:
         "lodging": "",
         "food": "",
         "gear": "",
+        "why_vibes": "",
         "pro_tips": "",
     }
 
@@ -184,6 +198,7 @@ def parse_sections(text: str) -> dict:
         ("🏕️ WHERE TO STAY", "lodging"),
         ("🍺 FOOD & DRINK STOPS", "food"),
         ("🎒 GEAR CHECKLIST", "gear"),
+        ("✨ WHY THIS TRIP VIBES", "why_vibes"),
         ("💡 PRO TIPS", "pro_tips"),
     ]
 
